@@ -41,6 +41,10 @@ void SheetSim::setICs()
   {
     sheets_ic_sinusoid_1d_diffusion(bssnSim, sheetSim, lambda, iodata, tot_mass);
   }
+  else if(_config("ic_type", "") == "vectorpert")
+  {
+    sheet_ic_set_vectorpert(bssnSim, sheetSim, iodata, tot_mass);
+  }
   else
   {
     iodata->log("Unsupported IC type!");

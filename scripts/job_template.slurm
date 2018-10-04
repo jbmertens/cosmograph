@@ -3,9 +3,7 @@
 #SBATCH --exclusive
 #SBATCH --time=72:00:00
 #SBATCH --mem=60g
-#SBATCH -A gds6
 #SBATCH -J JOBNAME
-#SBATCH --exclude=compt178
 
 JOBDIR="job-$SLURM_JOBID"
 JOBPATH="$TMPDIR/$JOBDIR"

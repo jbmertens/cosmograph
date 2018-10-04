@@ -223,6 +223,8 @@ class CosmoArray
 
     RT getTriCubicInterpolatedValue(RT i_in, RT j_in, RT k_in)
     {
+      return getInterpolatedValue(i_in, j_in, k_in);
+      
       IT il = i_in < 0 ? (IT) i_in - 1 : (IT) i_in; // Index "left" of i
       RT id = i_in - il; // fractional difference
       // special 1d case

@@ -4,8 +4,8 @@ EXEC_DIR=$(pwd)
 # Switch to the directory containing this script,
 cd "$(dirname "$0")"
 # up two directories should be the main codebase.
-mkdir -p ../../build
-cd ../../build
+mkdir -p ../../build/vector
+cd ../../build/vector
 pwd
 
 # Some colors
@@ -29,8 +29,9 @@ CARRIER_COUNT_SCHEME=1
 DEPOSIT_SCHEME=1
 METHOD_ORDER_RES=4
 GN_eta=0.001
-STEPS_FAC=6000
+STEPS_FAC=1
 RES_NS_RED=8
+DT_FRAC=0.1
 
 # read in options
 for i in "$@"
@@ -39,7 +40,7 @@ do
       -h|--help)
       printf "Usage: ./1d_runs.sh\n"
       printf "         [-C|--cluster-run] [-d|--dry-run]\n"
-      printf "         [(-N|--resolution-N)='0064'] [(-l|--l)=1] [(-A|--amplitude)=0.002]\n"
+      printf "         [(-N|--resolution-N)='0064'] [(-l|--l)=1] [(-b|--amplitude)=0.002]\n"
       printf "         [(-c|--carriers)=2] [(-g|--gauge)=Harmonic] [--GN_eta=0.001]\n"
       printf "         [(-s|--steps-fac)=3000] [(-n|--ns-reduction)=8]\n"
       exit 0
@@ -60,7 +61,7 @@ do
       GN_eta="${i#*=}"
       shift # past argument=value
       ;;
-      -A=*|--amplitude=*)
+      -b=*|--amplitude=*)
       MODE_AMPLITUDE="${i#*=}"
       shift # past argument=value
       ;;
@@ -94,24 +95,17 @@ done
 # derived vars
 RES_INT=$(echo $RES_STR | sed 's/^0*//')
 RES_NS=$((RES_INT*RES_INT/RES_NS_RED))
-STEPS=$(bc <<< "$RES_INT*$STEPS_FAC/$BOX_LENGTH")
-IO_INT=$((STEPS/1000))
-if ((IO_INT<1)); then
-  IO_INT=1
-fi
-IO_INT_1D=$((STEPS/10))
-if ((IO_INT_1D<1)); then
-  IO_INT_1D=1
-fi
+STEPS=$(bc <<< "$RES_INT*$STEPS_FAC/$BOX_LENGTH/$DT_FRAC")
+IO_INT=1
+IO_INT_1D=1
 IO_INT_3D=$((STEPS/10))
 if ((IO_INT_3D<1)); then
   IO_INT_3D=1
 fi
 METHOD_ORDER=$((METHOD_ORDER_RES*2))
 IC_PPDX=$((RES_INT*20000))
-DT_FRAC=0.2
 OUTPUT_DIR=output
-DIR="$EXEC_DIR/1D_run-L_$BOX_LENGTH-r_$RES_STR-Odx_$METHOD_ORDER-cpdx_$CARRIERS_PER_DX-ccs_$CARRIER_COUNT_SCHEME-ds_$DEPOSIT_SCHEME-A_${MODE_AMPLITUDE}_$GAUGE"
+DIR="$EXEC_DIR/1D_run-L_$BOX_LENGTH-r_$RES_STR-Odx_$METHOD_ORDER-cpdx_$CARRIERS_PER_DX-ccs_$CARRIER_COUNT_SCHEME-ds_$DEPOSIT_SCHEME-b_${MODE_AMPLITUDE}_$GAUGE"
 
 printf "${BLUE}Deploying runs:${NC}\n"
 printf "  Will be using directory: $DIR\n"
@@ -137,40 +131,12 @@ mkdir -p $DIR
 cd $DIR
 
 TMP_CONFIG_FILE=config.txt
-if [ "$GAUGE" = "Static" ]; then
-  cp ../../../config/1d_dust.txt $TMP_CONFIG_FILE
-  USE_Z4c=0
-else
-  cp ../../../config/1d_sheets.txt $TMP_CONFIG_FILE
-  USE_Z4c=1
-fi
+cp ../../../config/tests/vector.txt $TMP_CONFIG_FILE
+USE_Z4c=1
 
-USE_GN=0
-if [ "$GAUGE" = "GeneralizedNewton" ]; then
-  USE_GN=1
-  sed -i -E "s/GN_eta = [\.0-9]+/GN_eta = $GN_eta/g" $TMP_CONFIG_FILE
-  sed -i -E "s/KO_damping_coefficient = [\.0-9]+/KO_damping_coefficient = 0.05/g" $TMP_CONFIG_FILE
 
-  DT_FRAC=0.0125
-  STEPS=$(bc <<< " ( $RES_INT*$STEPS_FAC/$BOX_LENGTH*0.1/$DT_FRAC ) ")
-  IO_INT=$((STEPS/1000))
-  if ((IO_INT<1)); then
-    IO_INT=1
-  fi
-  IO_INT_1D=$((STEPS/10))
-  if ((IO_INT_1D<1)); then
-    IO_INT_1D=1
-  fi
-  IO_INT_3D=$((STEPS/10))
-  if ((IO_INT_3D<1)); then
-    IO_INT_3D=1
-  fi
-
-  OUTPUT_DIR=output.$GN_eta
-fi
-
-sed -i -E "s/ns1 = [\.0-9]+/ns1 = $RES_NS/g" $TMP_CONFIG_FILE
-sed -i -E "s/carriers_per_dx = [0-9]+/carriers_per_dx = $CARRIERS_PER_DX/g" $TMP_CONFIG_FILE
+sed -i -E "s/ns2 = [\.0-9]+/ns2 = $RES_NS/g" $TMP_CONFIG_FILE
+sed -i -E "s/carriers_per_dy = [0-9]+/carriers_per_dy = $CARRIERS_PER_DX/g" $TMP_CONFIG_FILE
 sed -i -E "s/carrier_count_scheme = [\.0-9]+/carrier_count_scheme = $CARRIER_COUNT_SCHEME/g" $TMP_CONFIG_FILE
 sed -i -E "s/deposit_scheme = [0-9]+/deposit_scheme = $DEPOSIT_SCHEME/g" $TMP_CONFIG_FILE
 sed -i -E "s/integration_points_per_dx = [0-9]+/integration_points_per_dx = $IC_PPDX/g" $TMP_CONFIG_FILE
@@ -180,7 +146,7 @@ sed -i -E "s/IO_3D_grid_interval = [0-9]+/IO_3D_grid_interval = $IO_INT_3D/g" $T
 sed -i -E "s/IO_bssnstats_interval = [0-9]+/IO_bssnstats_interval = $IO_INT/g" $TMP_CONFIG_FILE
 sed -i -E "s/IO_constraint_interval = [0-9]+/IO_constraint_interval = $IO_INT/g" $TMP_CONFIG_FILE
 sed -i -E "s/SVT_constraint_interval = [0-9]+/SVT_constraint_interval = $IO_INT/g" $TMP_CONFIG_FILE
-sed -i -E "s/peak_amplitude = [\.0-9]+/peak_amplitude = $MODE_AMPLITUDE/g" $TMP_CONFIG_FILE
+sed -i -E "s/b = [\.0-9]+/b = $MODE_AMPLITUDE/g" $TMP_CONFIG_FILE
 sed -i -E "s/lapse = [a-zA-Z]+/lapse = $GAUGE/g" $TMP_CONFIG_FILE
 sed -i -E "s/dt_frac = [\.0-9]+/dt_frac = $DT_FRAC/g" $TMP_CONFIG_FILE
 sed -i -E "s,output_dir = [[:alnum:]_-\./]+,output_dir = $OUTPUT_DIR,g" $TMP_CONFIG_FILE
@@ -192,11 +158,11 @@ if "$USE_CLUSTER"; then
   module load cmake
 fi
 
-cmake ../../.. -DCOSMO_N=$RES_INT -DCOSMO_NY=1 -DCOSMO_NZ=1 -DCOSMO_USE_GENERALIZED_NEWTON=$USE_GN\
+cmake ../../.. -DCOSMO_N=$RES_INT -DCOSMO_NX=1 -DCOSMO_NZ=1 -DCOSMO_USE_GENERALIZED_NEWTON=0\
    -DCOSMO_STENCIL_ORDER=$METHOD_ORDER -DCOSMO_USE_REFERENCE_FRW=0 -DCOSMO_H_LEN_FRAC=$BOX_LENGTH\
    -DCOSMO_USE_Z4c_DAMPING=$USE_Z4c -DCOSMO_USE_LONG_DOUBLES=0 && make -j24
 if [ $? -ne 0 ]; then
-  echo "Error: compilation failed!"
+  printf "${RED}Error: compilation failed!${NC}\n"
   exit 1
 fi
 

@@ -1,7 +1,7 @@
 steps = 1
 
 simulation_type = sheets
-ic_type = sinusoid_3d
+ic_type = sinusoid_diffusion
 
 lapse = Static
 
@@ -18,7 +18,7 @@ verbosity = 0
 damping_coef = 0.005
 precision_goal = 0.000001
 
-deposit_scheme = 1
+deposit_scheme = 0
 carrier_count_scheme = 1
 
 carriers_per_dx = 4

@@ -98,6 +98,8 @@
   BSSN_APPLY_TO_AUX_B(function)        \
   BSSN_APPLY_TO_EXP_N(function)
 
+// S_I is lower
+// S^TF_IJ is lower
 #define BSSN_APPLY_TO_SOURCES(function) \
   function(DIFFr);                      \
   function(DIFFS);                      \

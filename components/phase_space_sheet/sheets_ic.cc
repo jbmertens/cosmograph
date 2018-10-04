@@ -1166,6 +1166,8 @@ void sheets_ic_sinusoid_3d_diffusion(
   
 }
 
+
+
 void sheets_ic_sinusoid_1d_diffusion(
   BSSN *bssnSim, Sheet *sheetSim, Lambda * lambda, IOData * iodata, real_t & tot_mass)
 {
@@ -1281,7 +1283,7 @@ void sheets_ic_sinusoid_1d_diffusion(
   // doing iteration
   while(max_err >= precision_goal)
   {
-    if(iter_cnt >= 5000)
+    if(iter_cnt >= 1)
       break;
     
     Dx_a = Dx_p;
@@ -1338,6 +1340,156 @@ void sheets_ic_sinusoid_1d_diffusion(
   }
 
   
+}
+
+
+
+/**
+ * @brief Initialize particles per vector mode ID
+ */
+void sheet_ic_set_vectorpert(BSSN *bssnSim, Sheet *sheetSim,
+  IOData * iodata, real_t & tot_mass)
+{
+  iodata->log("Setting ICs based on a vector mode fluctuation.");
+  // assumes functions vary in the y-direction
+  idx_t i, j, k;
+
+  arr_t & DIFFK_p = *bssnSim->fields["DIFFK_p"];
+  arr_t & A12_p = *bssnSim->fields["A12_p"];
+  arr_t & A22_p = *bssnSim->fields["A22_p"];
+  arr_t & DIFFgamma12_p = *bssnSim->fields["DIFFgamma12_p"];
+  arr_t & DIFFgamma22_p = *bssnSim->fields["DIFFgamma22_p"];
+  arr_t & Gamma1_p = *bssnSim->fields["Gamma1_p"];
+  arr_t & DIFFr_a = *bssnSim->fields["DIFFr_a"];
+  arr_t & S1_a = *bssnSim->fields["S1_a"];
+  arr_t & S2_a = *bssnSim->fields["S2_a"];
+  arr_t & Dy = sheetSim->Dy._array_p;
+  arr_t & vx = sheetSim->vx._array_p;
+  arr_t & vy = sheetSim->vy._array_p;
+
+  real_t b = std::stod(_config("b", "0.01"));
+  iodata->log( "Generating ICs with b = " + stringify(b) );
+
+  real_t rho_FRW = 3.0/PI/8.0;
+  real_t K_FRW = -sqrt(24.0*PI*rho_FRW);
+  real_t L = H_LEN_FRAC;
+
+  // grid values
+  LOOP3(i,j,k)
+  {
+    idx_t idx = NP_INDEX(i,j,k);
+    real_t y = j*sheetSim->dy;
+
+    real_t bfn = b/L * std::cos(2.0*PI*y/L);
+    A12_p[idx] = 0.75*bfn;
+    A22_p[idx] = 1.5*bfn*bfn;
+    DIFFgamma12_p[idx] = bfn;
+    DIFFgamma22_p[idx] = bfn*bfn;
+    Gamma1_p[idx] = -2.0*PI*b/L/L * std::sin(2.0*PI*y/L);
+
+    real_t rho = rho_FRW - 9.0/128.0/PI * bfn*bfn;
+    DIFFr_a[idx] = rho;
+    DIFFK_p[idx] = K_FRW;
+    if(rho < 0) {
+      iodata->log("Error setting initial data, rho < 0!");
+      throw -1;
+    }
+  }
+
+  // particle displacements
+  idx_t integration_points = sheetSim->ns2 * std::stoi(_config("integration_points_per_dx", "1000"));
+  std::cout << "Setting initial conditions using " << integration_points << " integration_points" << std::endl;
+  real_t integration_interval = sheetSim->ly / integration_points;
+
+  // compute total mass in simulation, mass per tracer particle
+  tot_mass = 0;
+  real_t tot_mass_tmp = 0.0;
+# pragma omp parallel for reduction(+:tot_mass_tmp)
+  for(idx_t j=0; j<integration_points; ++j)
+  {
+    real_t y = sheetSim->ly * j/(real_t) integration_points;
+    real_t bfn = b/L * std::cos(2.0*PI*y/L);
+    real_t rho = rho_FRW - 9.0/128.0/PI * bfn*bfn; // ADM density
+    real_t W = ( 16*L*L - 3*b*b*pw2(std::cos(2.0*PI*y/L)) ) / std::sqrt(
+        pw2(16*L*L - 3*b*b*pw2(std::cos(2.0*PI*y/L)))
+        - pw2(8*PI*b*std::sin(2.0*PI*y/L))
+      );
+    tot_mass_tmp += rho / W * integration_interval * sheetSim->lx * sheetSim->lz;
+  }
+  tot_mass = tot_mass_tmp;
+  real_t mass_per_tracer = tot_mass / (real_t) (sheetSim->ns2);
+  std::cout << "Total mass and mass_per_tracer are " << tot_mass
+    << ", " << mass_per_tracer << ".\n";
+
+
+  // Cumulatively integrate density, deposit particles when integral reaches a particle mass
+  idx_t cur_s2 = 1; // (boundary condition: Dy(y=0) = 0, so start positioning s1=1 particle
+  real_t cur_mass = 0;
+  for(j=0; j<=integration_points; ++j)
+  {
+    real_t y = sheetSim->ly * j/(real_t) integration_points;
+    real_t bfn = b/L * std::cos(2.0*PI*y/L);
+    real_t rho = rho_FRW - 9.0/128.0/PI * bfn*bfn;
+    real_t W = ( 16*L*L - 3*b*b*pw2(std::cos(2.0*PI*y/L)) ) / std::sqrt(
+        pw2(16*L*L - 3*b*b*pw2(std::cos(2.0*PI*y/L)))
+        - pw2(8*PI*b*std::sin(2.0*PI*y/L))
+      );
+    cur_mass += rho / W * integration_interval * sheetSim->lx * sheetSim->lz;
+
+    if(cur_mass >= mass_per_tracer)
+    {
+      for(i=0; i<sheetSim->ns1; ++i)
+        for(k=0; k<sheetSim->ns3; ++k)
+        {
+          real_t y_part = y + integration_interval * (cur_mass - mass_per_tracer) / mass_per_tracer;
+          Dy(i, cur_s2, k) = y_part - sheetSim->_S2IDXtoY0(cur_s2);
+          // covariant (not contravariant) velocities
+          real_t denom = std::sqrt(
+              pw2(16*L*L - 3*b*b*pw2(std::cos(2.0*PI*y_part/L)))
+              - pw2(8*PI*b*std::sin(2.0*PI*y_part/L))
+            );
+          vy(i, cur_s2, k) = -4*b*b*PI*std::sin(4.0*PI*y_part/L)/L/denom;
+          vx(i, cur_s2, k) = -8*b*PI*std::sin(2.0*PI*y_part/L)/denom;
+        }
+      cur_mass = cur_mass - mass_per_tracer;
+      cur_s2++;
+      if(cur_s2 == sheetSim->ns2) break;
+    }
+  }
+
+  if(cur_s2 < sheetSim->ns2 - 1)
+  {
+    std::cout<<"Error in setting initial distribution!\n";
+    throw(-1);
+  }
+
+  // Check deposition accuracy?
+  LOOP3(i,j,k)
+    DIFFr_a[NP_INDEX(i,j,k)] = 0.0;
+  sheetSim->stepInit();
+  bssnSim->stepInit();
+  sheetSim->addBSSNSource(bssnSim, tot_mass_tmp);
+  real_t maxdiff = 0;
+  for(j=0; j<NY; ++j)
+  {
+    real_t y = j*sheetSim->dy;
+    real_t bfn = b/L * std::cos(2.0*PI*y/L);
+    real_t rho = rho_FRW - 9.0/128.0/PI * bfn*bfn;
+    real_t diff = std::fabs(DIFFr_a[NP_INDEX(0,j,0)] - rho);
+    if(diff > maxdiff) maxdiff = diff;
+  }
+  std::cout << "rho max diff was " << maxdiff << "\n";
+
+  for(j=0; j<NY; ++j)
+  {
+    idx_t idx = NP_INDEX(0,j,0);
+    real_t y = j*sheetSim->dy;
+    real_t S1 = -3.0*b*PI/2.0/L/L * std::sin(2.0*PI*y/L) / 8.0/PI;
+    real_t S2 = S1*b/L*std::cos(2.0*PI*y/L) / 8.0/PI;
+    std::cout << S1_a[idx] <<" - "<<S1<<" = "<<S1_a[idx]-S1<<" | "
+      << S2_a[idx] <<" - "<<S2<<" = "<<S2_a[idx]-S2<<"\n";
+  }
+
 }
 
 

@@ -112,18 +112,6 @@ public:
   /**
    * Intermediate RK4 calculations for phase space fields
    */
-  void _RK4Calc();
-
-  void _stepInit();
-
-  void _K1Finalize();
-
-  void _K2Finalize();
-
-  void _K3Finalize();
-
-  void _K4Finalize();
-
   real_t _getXRangeInSVoxel(register_t & DX, idx_t s1_idx, idx_t s2_idx,
                             idx_t s3_idx, real_t X0_lower, real_t X0_upper);
 
