@@ -14,25 +14,26 @@ pars.InitPower.set_params(ns=0.965)
 #Not non-linear corrections couples to smaller scales than you want
 pars.NonLinear = model.NonLinear_both
 
-Om0 = 0.316049
-zI = 50.0
+Om0 = 0.3
+zI = 10.0
 aI = 1.0
 a0 = (1.0 + zI)*aI
-H0 = 4440 # Mpc^-1
-HI = H0*np.sqrt( Om0 * (aI/a0)**3 )
+H0 = 1.0/4440.0 # Mpc^-1
+HI = H0*np.sqrt( Om0 * (a0/aI)**3 )
 OL0 = 1.0 - Om0
 OLI = OL0/( OL0 + Om0*(a0/aI)**3 )
 print("OLI = ", OLI)
 
-Ls = np.logspace(np.log10(0.1), np.log10(12), 20)
-LphysIs = HI*Ls
-Lphys0s = LphysIs*a0/aI
-
+# Ls = np.logspace(np.log10(0.003), np.log10(20), 20) # Length scale in initial hubble units
+Ls = np.array([1.9/50.0, 1.9/20.0, 1.9/15.0, 1.9])
+LphysIs = Ls/HI
+Lphys0s = LphysIs*a0/aI # Physical length scale today
+LH0s = Lphys0s*H0
 
 pars.set_matter_power(redshifts=[zI], kmax=2.0)
 results = camb.get_results(pars)
 results.calc_power_spectra(pars)
-kh_nonlin, z_nonlin, pk_nonlin = results.get_matter_power_spectrum(minkh=1e-4, maxkh=1, npoints = 200)
+kh_nonlin, z_nonlin, pk_nonlin = results.get_matter_power_spectrum(minkh=1e-4, maxkh=1, npoints=200)
 ks = kh_nonlin/0.675
 Dks = pk_nonlin[0,:]*1.0/2.0/np.pi*ks**3
 
@@ -47,4 +48,4 @@ Sigs = np.array([getSig(R) for R in Lphys0s])
 print(Ls)
 print(Sigs)
 print(Lphys0s)
-
+print(LH0s)
